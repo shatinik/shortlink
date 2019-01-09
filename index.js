@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const Sequelize = require('sequelize');
 
 const app = express();
-const port = 1338;
+const port = 80;
 const maxLinkLength = 255; // в БД поле link типа letchar(255)
 const randBytes = 4; // функцией randomBytes получаем байты и преобразуем в hex-строку из 8 символов. в БД стоит тип char(8)
 
@@ -18,7 +18,7 @@ if (!process.env.dbpass) {
   return;
 }
 
-const sequelize = new Sequelize('testlounge', process.env.dblogin, process.env.dbpass, {
+const sequelize = new Sequelize('localhost', process.env.dblogin, process.env.dbpass, {
   host: 'localhost',
   dialect: 'mysql'
 });
