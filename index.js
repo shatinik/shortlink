@@ -8,7 +8,6 @@ const maxLinkLength = 255; // в БД поле link типа letchar(255)
 const randBytes = 4; // функцией randomBytes получаем байты и преобразуем в hex-строку из 8 символов. в БД стоит тип char(8)
 
 if (!process.env.dblogin) {
-  console.log(process.env);
   console.log('process.env.dblogin is not specified');
   return;
 }
