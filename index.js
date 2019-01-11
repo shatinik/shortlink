@@ -3,6 +3,10 @@ const URL = require('url');
 const http = require('http');
 const https = require('https');
 const http2 = require('http2');
+const xpath = require('xpath');
+const parse5 = require('parse5');
+const xmlser = require('xmlserializer');
+const dom = require('xmldom').DOMParser;
 
 const app = express();
 const port = 8005;
@@ -64,6 +68,14 @@ const getContent = (url, ver) => new Promise((resolve, reject) => {
   }
 })
 
+function parse(tpl, html) {
+  const document = parse5.parse(html);
+  const xhtml = xmlser.serializeToString(document);
+  const doc = new dom().parseFromString(xhtml);
+  const select = xpath.useNamespaces({"x": "http://www.w3.org/1999/xhtml"});
+  return nodes = select(tpl, doc);
+}
+
 app.get('/parse', async (req, res) => {
   let link = req.query.link;
   if (!link) {
@@ -88,24 +100,8 @@ app.get('/parse', async (req, res) => {
         }
       }
       try {
-        let parsed = await getContent(url, 'http2');
-        message = `Parsed value: ${parsed}`;
-      } catch (e) {
-        console.log(e);
-        res.status(500).send();
-      }
-      
-      break;
-    }
-    case 'vk.com': {
-      switch (url.pathname) {
-        default: {
-          message = `Path: ${url.pathname} is not supported for Host: ${url.host}`;
-          break;
-        }
-      }
-      try {
-        let parsed = await getContent(url, 'http2');
+        let html = await getContent(url, 'http2');
+        let parsed = parse('//*[@id="page"]/div[2]/div[2]/section/div/div[2]/div[1]/div[1]/span[1]/div[1]', html);
         message = `Parsed value: ${parsed}`;
       } catch (e) {
         console.log(e);
