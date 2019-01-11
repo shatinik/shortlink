@@ -1,139 +1,112 @@
 const express = require('express');
-const URL = require('url');
-const http = require('http');
-const https = require('https');
-const http2 = require('http2');
+const crypto = require("crypto");
+const Sequelize = require('sequelize');
 
 const app = express();
-const port = 8005;
+const port = 80;
+const maxLinkLength = 255; // в БД поле link типа letchar(255)
+const randBytes = 4; // функцией randomBytes получаем байты и преобразуем в hex-строку из 8 символов. в БД стоит тип char(8)
+
+if (!process.env.dblogin) {
+  console.log('process.env.dblogin is not specified');
+  return;
+}
+
+if (!process.env.dbpass) {
+  console.log('process.env.dbpass is not specified');
+  return;
+}
+
+const sequelize = new Sequelize('localhost', process.env.dblogin, process.env.dbpass, {
+  host: 'localhost',
+  dialect: 'mysql'
+});
+
+app.use(express.urlencoded({ extended: false }))
 
 app.get('/', (req, res) => {
   let tpl = `<!doctype html>
   <html>
     <head>
-      <title>Parser page</title>
+      <title> Shortlink page</title>
     </head>
     <body>
-      <form method="GET" action="/parse">
-        <input type="url" placeholder="input your link here" name="link">
+      <form method="POST">
+        <input type="url" placeholder="input your link here" name="link" maxlength="${maxLinkLength}">
         <input type="submit">
       </form>
     </body>
   </html>`;
-  res.status(200).send(tpl);
-});
+  res.status(200).send(tpl));
+}
 
-const getContent = (url, ver) => new Promise((resolve, reject) => {
-  switch (ver) {
-    case 'http': {
-      break;
-    }
-    case 'https': {
-      break;
-    }
-    case 'http2': {
-      try {
-        const client = http2.connect(url);
 
-        const req = client.request({
-          [http2.constants.HTTP2_HEADER_SCHEME]: "https",
-          [http2.constants.HTTP2_HEADER_METHOD]: http2.constants.HTTP2_METHOD_GET,
-          [http2.constants.HTTP2_HEADER_PATH]: `/`
-        });
-  
-        let data = [];
-        req.on('data', (chunk) => {
-            data.push(chunk);
-        });
-        req.end();
-        req.on('end', () => {
-          resolve({data: data.join()});
-        });
-        
-        break;
-        
-      } catch (e) {
-        reject({e});
-        break;
-      }
-    }
-    default: {
-      reject({ error: `${ver} is not supported`});
-      break;
-    }
-  }
-})
-
-app.get('/parse', async (req, res) => {
-  let link = req.query.link;
-  if (!link) {
+app.post('/', async (req, res) => {
+  if (!req.body.link) {
     res.status('400').send('link is not specified');
     return;
-  }
-	
-  let valid = /^(http|https):\/\/[^ "]+$/.test(link);
-  if (!valid) {
-    res.status('400').send('link is not valid');
+  } else if (req.body.link.length > maxLinkLength) {
+    res.status('400').send(`link length greater than ${maxLinkLength}`);
     return;
   }
-	
-  let url = URL.parse(link);
-  let message = '';
-  switch (url.host) {
-    case 'cryptorated.com': {
-      switch (url.pathname) {
-        default: {
-          message = `Path: ${url.pathname} is not supported for Host: ${url.host}`;
-          break;
-        }
-      }
-      try {
-        let parsed = await getContent(url, 'http2');
-        message = `Parsed value: ${parsed}`;
-      } catch (e) {
-        console.log(e);
-        res.status(500).send();
-      }
-      
-      break;
-    }
-    case 'vk.com': {
-      switch (url.pathname) {
-        default: {
-          message = `Path: ${url.pathname} is not supported for Host: ${url.host}`;
-          break;
-        }
-      }
-      try {
-        let parsed = await getContent(url, 'http2');
-        message = `Parsed value: ${parsed}`;
-      } catch (e) {
-        console.log(e);
-        res.status(500).send();
-      }
-      
-      break;
-    }
-    default: {
-      let host = url.host;
-      message = `Host: ${host} is not supported`;
-      break;
-    }	  
+  let link = req.body.link;
+  let valid = /^(ftp|http|https):\/\/[^ "]+$/.test(link);
+  let short = '';
+  let check = true;
+  
+  if (!valid) {
+	res.status('400').send('link is not valid');
+	return;
   }
+  while (check) {
+    short = crypto.randomBytes(4).toString('hex');
+    matches = await sequelize.query('SELECT `id` FROM `sht_links` WHERE `short`=?', {
+      replacements: [short], 
+      type: sequelize.QueryTypes.SELECT 
+    });
+    if (matches.length == 0) {
+      check = false;
+    }
+  }
+  await sequelize.query('INSERT INTO `sht_links`(`link`, `short`) VALUES (?, ?)', {
+    replacements: [link, short], 
+    type: sequelize.QueryTypes.INSERT 
+  });
   let tpl = `<!doctype html>
-  <html>
-    <head>
-      <title>Parser page</title>
-    </head>
-    <body>
-      ${message}
-    </body>
-  </html>`;
-  res.status(200).send(tpl);
+    <html>
+      <head>
+        <title> Shortlink page</title>
+      </head>
+      <body>
+        Your link to ${link}: <a href="${short}">localhost/${short}</a>
+      </body>
+    </html>`;
+  res.status(201).send(tpl);
 });
 
 app.get('*', async (req, res) => {
-  res.redirect('/');
+  let short = req.originalUrl.substr(1);
+  if (short.length != 8 || !(/[0-9a-f]/.test(short))) {
+    res.status('400').send('link is not valid');
+	return;
+  }
+  let matches = await sequelize.query('SELECT `link` FROM `sht_links` WHERE `short`=?', {
+    replacements: [short], 
+    type: sequelize.QueryTypes.SELECT 
+  });
+  if (matches.length == 0) {
+    res.status(404).send();
+	return;
+  }
+  res.redirect(matches[0].link);
 });
 
-app.listen(port, () => console.log(`App listening on port ${port}!`));
+sequelize
+  .authenticate()
+  .then(() => {
+    console.log('Connection has been established successfully.');
+    app.listen(port, () => console.log(`App listening on port ${port}!`));
+  })
+  .catch(err => {
+    console.error('Unable to connect to the database:', err);
+  });
