@@ -1,5 +1,8 @@
 const express = require('express');
 const URL = require('url');
+const http = require('http');
+const https = require('https');
+const http2 = require('http2');
 
 const app = express();
 const port = 8005;
@@ -19,8 +22,49 @@ app.get('/', (req, res) => {
   </html>`;
   res.status(200).send(tpl);
 });
-	
-app.get('/parse', (req, res) => {
+
+const getContent = (url, ver) => new Promise((resolve, reject) => {
+  switch (ver) {
+    case 'http': {
+      break;
+    }
+    case 'https': {
+      break;
+    }
+    case 'http2': {
+      try {
+        const client = http2.connect(url);
+
+        const req = client.request({
+          [http2.constants.HTTP2_HEADER_SCHEME]: "https",
+          [http2.constants.HTTP2_HEADER_METHOD]: http2.constants.HTTP2_METHOD_GET,
+          [http2.constants.HTTP2_HEADER_PATH]: `/`
+        });
+  
+        let data = [];
+        req.on('data', (chunk) => {
+            data.push(chunk);
+        });
+        req.end();
+        req.on('end', () => {
+          resolve({data: data.join()});
+        });
+        
+        break;
+        
+      } catch (e) {
+        reject({e});
+        break;
+      }
+    }
+    default: {
+      reject({ error: `${ver} is not supported`});
+      break;
+    }
+  }
+})
+
+app.get('/parse', async (req, res) => {
   let link = req.query.link;
   if (!link) {
     res.status('400').send('link is not specified');
@@ -37,8 +81,37 @@ app.get('/parse', (req, res) => {
   let message = '';
   switch (url.host) {
     case 'cryptorated.com': {
-      let parsed = 4.2;
-      message = `Parsed value: ${parsed}`;
+      switch (url.pathname) {
+        default: {
+          message = `Path: ${url.pathname} is not supported for Host: ${url.host}`;
+          break;
+        }
+      }
+      try {
+        let parsed = await getContent(url, 'http2');
+        message = `Parsed value: ${parsed}`;
+      } catch (e) {
+        console.log(e);
+        res.status(500).send();
+      }
+      
+      break;
+    }
+    case 'vk.com': {
+      switch (url.pathname) {
+        default: {
+          message = `Path: ${url.pathname} is not supported for Host: ${url.host}`;
+          break;
+        }
+      }
+      try {
+        let parsed = await getContent(url, 'http2');
+        message = `Parsed value: ${parsed}`;
+      } catch (e) {
+        console.log(e);
+        res.status(500).send();
+      }
+      
       break;
     }
     default: {
